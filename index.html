@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <script src="https://unpkg.com/vue/dist/vue.js"></script>
+        <script src="https://unpkg.com/element-ui/lib/index.js"></script>
+        <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+
+        <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css">
+    </head>
+    <body>
+        <div id="app" >
+          <div id="approot">
+              <h2>{{targetoption}}被{{targetscount}}处直接嵌入</h2>
+              <h4>注意：仅包含以指定id形式的嵌入，即"id='bar'的形式"</h4>
+              <el-button size="mini" v-on:click="targetgetter" v-if="!正在获取">刷新</el-button>
+              <span v-if="正在获取">正在获取</span>
+              <el-select 
+              size="mini" 
+              v-model="targetoption"
+              @change="optionsaver">
+                <el-option
+                v-for="item in targetoptiontable"
+                :key="item"
+                :label="item"
+                :value="item">
+                </el-option>
+              </el-select>
+                <el-table
+                :data="blockinforarry">
+                    <el-table-column
+                        v-if = false
+                        prop ="root_id">
+                    </el-table-column>
+                    <el-table-column
+                    prop="hpath"
+                    label="所在文档路径">
+                        <template slot-scope="scope" >
+                            <el-link @click="窗口内打开(scope.row.root_id)" >{{scope.row.hpath}}<i class="el-icon-link el-icon--right"></i></el-link>
+                        </template>
+                    </el-table-column>
+                    <el-table-column
+                    prop="id"
+                    label="所在块id">
+                        <template slot-scope="scope" >
+                            <el-link @click="窗口内打开(scope.row.id)" >{{scope.row.id}}<i class="el-icon-link el-icon--right"></i></el-link>
+                        </template>
+                    </el-table-column>
+                    <el-table-column
+                    prop="source_id"
+                    label="嵌入源">
+                        <template slot-scope="scope" >
+                            <el-link @click="窗口内打开(scope.row.source_id)" >{{scope.row.source_id}}<i class="el-icon-link el-icon--right"></i></el-link>
+                        </template>
+                    </el-table-column>
+                <el-table>
+          </div>
+        </div>
+    </body>
+    <script class="vues">
+        var vm = new Vue({
+            el: '#app',
+            mounted:async function(){
+                /*获取挂件自身元素和ID,设定挂件自身自定义属性*/
+                this.hosturl = window.location.host
+                await this.selfelgetter()
+                this.selfblock = await this.domblockgetter(this.selfel)
+               // //console.log("挂件自身块", this.selfblock)
+                this.selfel.setAttribute("cctype","percentcounter")
+                await this.setblockattributes([{"属性名":"cctype","属性值":"percentcounter"}],this.selfid)
+                /*获取挂件父块*/
+                this.selfparentblock = await this.parentblockgetter(this.selfblock)
+              //  //console.log("挂件父块",this.selfparentblock)
+                /*获取挂件兄弟块*/
+                this.selfbrotherblocks = await this.BrotherBlocksGetter(this.selfblock)
+              //  console.log("挂件兄弟块",this.selfbrotherblocks)
+                await this.optionsgetter()
+                await this.targetgetter()
+            },
+
+            data(){
+                return{
+                    正在获取:false,
+                    targetoptiontable:[
+                    "文档",
+                    "父块",
+                    "前一个块",
+                    "后一个块",
+                    "文档所有块",
+                    ],
+                    targetoption:"文档", 
+                    targetscount:0,
+                    /*伺服路径*/
+                    hosturl:"",
+                    /*挂件自身元素*/
+                    selfel:{},
+                    /*挂件自身块*/
+                    selfblock:{},
+                    /*挂件自身id*/
+                    selfid:"",
+                    /*apitoken，只是占个坑*/
+                    apitoken:"",
+                    /*sql查询语句*/
+                    sqlstring:"",
+                    /*挂件的父块对应的元素*/
+                    selfparentel:{},
+                    /*挂件父块*/
+                    selfparentblock:{},
+                    /*挂件的兄弟块*/
+                    selfbrotherblocks:[],
+                    /*完成百分比*/
+                    sqlTemp:{},
+                    /*sql查询语句头*/
+                    sqlHeader : "select * from blocks where ",
+                    /*任务列表数据*/
+                    itemsdata:{},
+                    blockinforarry:[],
+                }
+            },
+            watch:{
+            },
+            methods:{
+                窗口内打开: function(id){
+                let that = this
+                let 虚拟链接 =  window.parent.document.createElement("span")
+                虚拟链接.setAttribute("data-type","block-ref")
+                虚拟链接.setAttribute("data-id",id)
+                let 临时目标 = window.parent.document.querySelector(".protyle-wysiwyg div[data-node-id] div[contenteditable]")
+                //console.log(临时目标)
+                临时目标.appendChild(虚拟链接)
+                let 点击事件 =  window.parent.document.createEvent('MouseEvents')
+                点击事件.initMouseEvent('click', true, false, window, 0, 0, 0, 0, 0, false, false, false, false, 0, null);
+                虚拟链接.dispatchEvent(点击事件);
+                虚拟链接.remove()
+            },
+                targetgetter:async function(){
+                    let that = this
+                    let targetoption = that.targetoption
+                    await that.selfelgetter()
+                    that.selfblock = await that.domblockgetter(that.selfel)
+                    //console.log(that.selfblock)
+                    let targetids = []
+                    if (targetoption == "文档"){
+                        targetids.push(that.selfblock["root_id"])
+                    }
+                    if (targetoption == "父块"){
+                        targetids.push(that.selfblock["parent_id"])
+                    }
+                    if (targetoption == "前一个块"){
+                        targetids.push(that.selfel.previousSibling.getAttribute("data-node-id"))
+                    }
+                    if (targetoption == "后一个块"){
+                        targetids.push(that.selfel.nextSibling.getAttribute("data-node-id"))
+                    }
+                    if (targetoption == "文档所有块"){
+                        let root_id = that.selfblock["root_id"]
+                        blocks = await that.sqldatagetter("select * from blocks where root_id = "+"'"+root_id+"'") 
+                        for (i=0;i<blocks.length;i++){targetids.push(blocks[i]["id"])}
+                    }
+                    //console.log(targetids)
+                    that.targetblocksgetter(targetids)
+                },
+                optionsgetter:async function(){
+                    //console.log(this.selfel)
+                    let options = this.selfel.getAttribute("custom-ccoption")
+                    //console.log(options)
+                    if (options != ""){
+                    this.targetoption = options}
+                    },
+                optionsaver:async function(){
+                    let that = this
+                    let obj = {} 
+                    let options = that.targetoption
+                    that.selfel.setAttribute("ccoption",options)
+                    obj["属性名"]="ccoption"
+                    obj["属性值"]=options
+                    let temp = [obj]
+                    //console.log("options",temp)
+                    //console.log("options",that.selfid)
+                    that.setblockattributes(temp,that.selfid)
+                    that.targetgetter()
+                },
+                optionshower:function(){
+                    this.optionshow=!this.optionshow
+                },
+                targetblocksgetter:async function(targetids){
+                    let that = this
+                    that.正在获取 = true
+                    that.blockinforarry = [] 
+                    let tempblockinforarry = [] 
+                    for (i=0;i<targetids.length;i++){
+                    
+                    let finalstring = `select * from blocks where type = 'query_embed' and markdown like '%${targetids[i]}%' and markdown like '{{select * from blocks where id%=%'`
+                    //console.log(finalstring)
+                    let targetblocks = await that.sqldatagetter(finalstring)
+                        for(j=0;j<targetblocks.length;j++){
+                            let block = targetblocks[j]
+                            block["source_id"]=targetids[i]
+                            tempblockinforarry.push(block)
+                            //console.log(block)
+                        };
+                    }
+                    that.blockinforarry = tempblockinforarry
+                    that.targetscount = tempblockinforarry.length
+                    //console.log("blockinforarry",that.blockinforarry)
+                    that.正在获取=false
+                },
+                embeddatagetter:async function(sqlstring){
+                    let that =this
+                    that.正在获取 = true
+                    let datas = {"stmt": sqlstring} 
+                    let jsondatas = JSON.stringify(datas)
+                    //console.log(datas)
+                    await axios({
+                            method:'POST',
+                            url:'http://'+that.hosturl + '/api/search/searchEmbedBlock',
+                            headers:{'Authorization': 'Token' + that.apitoken},
+                            data:(jsondatas)
+                            }).then(result =>{
+                            //console.log(result.data)
+                            let sqldataitem = result.data["data"]["blocks"]
+                            that.sqlTemp = sqldataitem 
+                            //console.log("embedtarget",that.sqlTemp)
+                            })
+                    return that.sqlTemp
+                    },
+                /*检查属性名，如果不在默认属性中就加上custom前缀*/
+                attrnamechecker:function(attr){
+                  let defaultattrs = ["name","alias","memo","bookmark"]
+                  if (attr in defaultattrs){
+                      return attr
+                  }
+                  else {return "custom-"+attr}   
+                },
+                /*设定块属性*/
+                setblockattributes:async function(attrs,id){
+                    let that = this 
+                    let data = {}
+                    data["id"] = id
+                    data["attrs"] = {}
+                    for (i=0;i<attrs.length;i++){
+                        let tempattr = attrs[i]
+                        /*检查属性名，如果不是内置属性就加上前缀*/
+                        let tempname = that.attrnamechecker(tempattr["属性名"])
+                        //console.log(tempname)
+                        let tempvalue = tempattr["属性值"]
+                        //console.log(tempvalue)
+                        data["attrs"][tempname] = tempvalue
+                    }
+                    /*发送设定的属性*/
+                    //console.log("setattr",data)
+                    await that.attrposter(data)
+                    //console.log(data)
+                },
+                itemsgetter:async function(blocks){
+                    let that = this
+                    let items =  []
+                    //console.log(blocks)
+                    let checkeditems = []
+                    for (i=0;i<blocks.length;i++){
+                        if (blocks[i]["subtype"] == "t"){
+                            let tempblock  = blocks[i]
+                            items.push(tempblock)
+                            if (tempblock["markdown"].slice(0,5)=="* [X]"){
+                                checkeditems.push(tempblock)
+                            }
+                        }
+                    }
+                    let obj = {}
+                    obj["items"]=items
+                    obj["checked"]=checkeditems
+                    //console.log(obj)
+                    return obj
+                },
+                /*设定dom元素属性,并为部分块属性生成DOM图标*/
+                setblockdomattrs:function(attrs,id){
+                    let that = this
+                    let blockdomel =  that.mainui.queryselector("[data-node-id="+id+"]")
+                    for (i=0;i<attrs.length;i++){
+                        let tempattr = attrs[i]
+                        /*检查属性名，如果不是内置属性就加上前缀*/
+                        let tempname =  that.attrnamechecker(tempattr["属性名"])
+                        let tempvalue = tempattr["属性值"]
+                        blockdomel.setAttribute(j)
+                    }
+                },
+                /*获取挂件块自身DOM元素*/
+                selfelgetter:async function(){
+                    let that = this
+                    that.errortip = `挂件的ip可能与主窗口不一致，建议优先通过模板插入挂件
+                    \n或者新建一个ifram块，资源设为widgets/jindutiao
+                    `
+                    that.selfel = self.frameElement.parentElement.parentElement
+                    that.selfid = that.selfel.getAttribute("data-node-id")
+                    //console.log("挂件所在元素",that.selfel)
+                },
+                /*获取挂件块自身id*/
+                domblockgetter:async function(domel){
+                    let that = this
+                    let tempid = domel.getAttribute("data-node-id")
+                    let domtoblock = await that.blockInforGetter(tempid)
+                    //console.log("元素自身id",tempid)
+                    //console.log("元素自身块",domtoblock)
+                    return domtoblock
+                },
+                /*计算百分比*/
+                percentcounter:async function(data){
+                    //console.log("data",data)
+                    let m =  data["items"].length
+                    let n =  data["checked"].length
+                    this.checkedpecent = Math.round(n/m * 10000) / 100.00                    
+                },
+                /*根据id生成用于获取块属性的sql语句并获取对应快属性*/
+                blockInforGetter:async function(id){
+                    let that = this
+                    let finalstring = that.sqlHeader + "id = "+ "'"+id+"'"
+                    //console.log(finalstring)
+                    let blockinfors =  await that.sqldatagetter(finalstring) 
+                    let blockinfor = blockinfors[0]
+                    //console.log("blockifor=",blockinfor)
+                    return blockinfor
+                },
+                /*根据块信息获取父级块*/
+                parentblockgetter:async function(blockinfor){
+                    let that = this
+                    let parentid =  blockinfor["parent_id"]
+                    let parentblock =  await that.blockInforGetter(parentid) 
+                    //console.log("源块",blockinfor,"父块",parentblock)
+                    return parentblock
+                },
+                /*根据块信息获取兄弟块*/
+                BrotherBlocksGetter:async function(blockinfor){
+                    let that = this 
+                    let parentid =  blockinfor["parent_id"]
+                    let blocksBrothers = []
+                    brotherblocks =   await that.sqldatagetter(that.sqlHeader+"parent_id ="+"'"+parentid+"'")
+                    
+                    //console.log("源块",blockinfor,"兄弟块",brotherblocks)
+                    return brotherblocks
+                },
+                /*根据块信息获取子块*/
+                blocksChildrenGetter:async function(blockinfor){
+                    let that = this
+                    let parentid  = blockinfor["id"]
+                    let childblocks = [] 
+                    childblocks = await that.sqldatagetter(that.sqlHeader+"parent_id ="+"'"+parentid+"'")
+                    //console.log("源块",blockinfor,"子块",childblocks)
+                    return childblocks
+                },
+
+                /*以sql语句从后台获取块信息*/
+                sqldatagetter:async function(tempstring){
+                let that =this
+                let datas = {"stmt": tempstring} 
+                let jsondatas = JSON.stringify(datas)
+                //console.log(datas)
+                await axios({
+                        method:'POST',
+                        url:'http://'+that.hosturl + '/api/query/sql',
+                        headers:{'Authorization': 'Token' + that.apitoken},
+                        data:(jsondatas)
+                        }).then(result =>{
+                        //console.log(result.data)
+                        let sqldataitem = result.data["data"]
+                        that.sqlTemp = sqldataitem 
+                        //console.log("blockinfor",that.sqlTemp)
+                        })
+                return that.sqlTemp
+                },
+                /*发送块属性*/
+                attrposter: function(datas){
+                let jsondatas = JSON.stringify(datas)
+                //console.log(datas)
+                axios({
+                    method:'POST',
+                    headers:{'Authorization': 'Token' + this.apitoken},
+                    url:'http://'+this.hosturl + '/api/attr/setBlockAttrs',
+                    data:(jsondatas)
+                    })
+                },
+
+            },
+        })
+
+    </script>
+</html>
